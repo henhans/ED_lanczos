@@ -186,7 +186,7 @@ int main(int argc, const char* argv[])
     }
 
     clog << "g.s. energy:" << diagonalize_tri(a,b)[0] << endl;
-
+    
     for (int it=2; it<itmax; it++)
     {
         clog << "iteration=" << it << ":" <<endl;
@@ -215,9 +215,10 @@ int main(int argc, const char* argv[])
                 u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz - b_u_nm1_q_sz ;
             }
         }
+        energies = diagonalize_tri(a,b);
+        clog << "g.s. energy:" << energies[0] << endl;
 
-        clog << "g.s. energy:" << diagonalize_tri(a,b)[0] << endl;
-        
+        if ( it > 3 )  energiesOfStream << it << "\t" << energies[0]<< "\t" << energies[1]<< "\t" << energies[2] << "\t" << energies[3] << endl;
     }
 
     energiesOfStream.close();
@@ -356,10 +357,10 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
         {
-
             if (qszcount[q][sz] == 0)
                 continue;
 
+            cout << "calculating H|u> : Q = " << q << ", Sz = " << sz << ", subspace size: " << qszcount[q][sz] << endl;
             // set up Hamiltonian in this subspace:
             hamiltonian.resize(qszcount[q][sz], qszcount[q][sz]);
             hamiltonian.zero();
@@ -369,6 +370,7 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
      
             for (int r = 0; r < qszcount[q][sz]; r++) // ket state
             {
+                double sum=0;
                 if (parameters.model == anderson)
                 {
                     // Problem 2 a):
@@ -469,22 +471,23 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
                         if ((basis[q][sz][r][m] == 2) && (basis[q][sz][r][m+1] == 1) && (basis[q][sz][rp][m] == 1) && (basis[q][sz][rp][m+1] == 2))
                             hamiltonian.set(r, rp, parameters.t);
                     }//m
+                    sum+=hamiltonian.get(r,rp)*u[q][sz].get(rp,0);
                 }//rp
+                Hu[q][sz].set(r,0,sum);
             }//r
 
             // calculating H|u> in this subspace:
-            cout << "calculating H|u> : Q = " << q << ", Sz = " << sz << ", subspace size: " << qszcount[q][sz] << endl;
             //method 1:
-            for (int r = 0; r < qszcount[q][sz]; r++) // ket state
-            {  
-               double sum=0;
-               for (int rp = 0; rp < qszcount[q][sz]; rp++) // bra state
-               {
-                  sum+=hamiltonian.get(r,rp)*u[q][sz].get(rp,0);
-               }
-               Hu[q][sz].set(r,0,sum);
-               //cout << Hu[q][sz].get(r,0) << endl;
-            }
+            //for (int r = 0; r < qszcount[q][sz]; r++) // ket state
+            //{  
+            //   double sum=0;
+            //   for (int rp = 0; rp < qszcount[q][sz]; rp++) // bra state
+            //   {
+            //      sum+=hamiltonian.get(r,rp)*u[q][sz].get(rp,0);
+            //   }
+            //   Hu[q][sz].set(r,0,sum);
+            //   cout << Hu[q][sz].get(r,0) << endl;
+            //}
             //method 2:
             //hamiltonian.print();
             //u_q_sz.print();
