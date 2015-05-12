@@ -1,0 +1,557 @@
+#LyX 2.0 created this file. For more info see http://www.lyx.org/
+\lyxformat 413
+\begin_document
+\begin_header
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman default
+\font_sans default
+\font_typewriter default
+\font_default_family rmdefault
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_amsmath 1
+\use_esint 1
+\use_mhchem 1
+\use_mathdots 1
+\cite_engine basic
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\use_refstyle 1
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Title
+Exact Diagonalization Notes
+\end_layout
+
+\begin_layout Author
+Tsung-Han Lee
+\end_layout
+
+\begin_layout Section
+Hamiltonians:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $H=t\overset{N-1}{\underset{i=i}{\sum}}(c_{i\sigma}^{\dagger}c_{i+1\sigma}+c_{i+1\sigma}^{\dagger}c_{i\sigma})+\overset{N}{\underset{i=i}{\sum}}\epsilon_{i}c_{i\sigma}^{\dagger}c_{i\sigma}+\overset{N}{\underset{i=i}{\sum}}U_{i}c_{i\uparrow}^{\dagger}c_{i\uparrow}c_{i\downarrow}^{\dagger}c_{i\downarrow}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+a) Anderson model: 
+\begin_inset Formula $\epsilon_{i}=\epsilon\delta_{i,1}$
+\end_inset
+
+ and 
+\begin_inset Formula $U_{i}=U\delta_{i,1}$
+\end_inset
+
+.
+ Only the first site has Coulomb repulsion and atomic energy.
+\end_layout
+
+\begin_layout Standard
+b) Hubbard model: 
+\begin_inset Formula $\epsilon_{i}=\epsilon$
+\end_inset
+
+ and 
+\begin_inset Formula $U_{i}=U$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+The basis state represntation is chosen in the convention 
+\begin_inset Formula $c_{1\uparrow}^{\dagger}...c_{N\uparrow}^{\dagger}c_{1\downarrow}^{\dagger}...c_{N\downarrow}^{\dagger}|0>$
+\end_inset
+
+, such that the hopping term for the nearest neighbor is always positive.
+ In the code, the basis is represented as 0 (empty), -1 (spin down), 1 (spin
+ up), and 2 (double occupied), so the basis looks like 
+\begin_inset Formula $|0,1,-1,2>$
+\end_inset
+
+.
+ The basises is build based on two symmetries: the total charge (
+\begin_inset Formula $N$
+\end_inset
+
+) and the total spin 
+\begin_inset Formula $S_{Z}$
+\end_inset
+
+.
+ The quantum number is represnted as 
+\begin_inset Formula $Q$
+\end_inset
+
+ and 
+\begin_inset Formula $S_{Z}$
+\end_inset
+
+, each 
+\begin_inset Formula $Q$
+\end_inset
+
+ and 
+\begin_inset Formula $S_{Z}$
+\end_inset
+
+ has subspace 
+\begin_inset Formula $r$
+\end_inset
+
+ .
+ Normally the highly symmetric state has the largest subspace, e.g.
+ for 
+\begin_inset Formula $N=4$
+\end_inset
+
+, 
+\begin_inset Formula $Q=0$
+\end_inset
+
+ and 
+\begin_inset Formula $S_{Z}=0$
+\end_inset
+
+ has 
+\begin_inset Formula $r=1...400$
+\end_inset
+
+ 400 basises.
+ Noted that in the note, the real 
+\begin_inset Formula $S_{Z}$
+\end_inset
+
+ need to be devided by 2, because the code's 
+\begin_inset Formula $S_{Z}$
+\end_inset
+
+ is set to integer for the convinience of building basis.
+ Similarily, the real total charge 
+\begin_inset Formula $Q$
+\end_inset
+
+ need to be added by a total size of the chain 
+\begin_inset Formula $N$
+\end_inset
+
+, since it runs from 
+\begin_inset Formula $-N\leq Q\leq N$
+\end_inset
+
+ for the convinience of building basis.
+\end_layout
+
+\begin_layout Standard
+The full exact diagonalization is performed in each subspace (block diagonal
+ for each 
+\begin_inset Formula $Q$
+\end_inset
+
+ and 
+\begin_inset Formula $S_{Z}$
+\end_inset
+
+), and the energies is recorded in 
+\begin_inset Quotes eld
+\end_inset
+
+energiesXXXXX.dat
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section
+Zero Temperature Spectral Function and Green's function:
+\end_layout
+
+\begin_layout Standard
+Here we discuss the implementation of zero temperature Lehmann representation
+ for spectral function.
+ For simplicity, we calculate the spectral function at the first site with
+ spin up, 
+\begin_inset Formula $A_{1\uparrow}(\omega)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $A_{1\uparrow}(\omega)=\underset{Q,S_{Z},r}{\sum}|_{diag}<0,0,0|c_{1\uparrow}|Q,S_{Z},r>_{diag}|^{2}\delta(\omega-E_{0,0,0}+E_{Q,S_{Z},r})+\underset{Q,S_{Z},r}{\sum}|_{diag}<0,0,0|c_{1\uparrow}^{\dagger}|Q,S_{Z},r>_{diag}|^{2}\delta(\omega-E_{Q,S_{Z},r}+E_{0,0,0})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Since we know that onlt the state 
+\begin_inset Formula $Q=1,S_{Z}=1$
+\end_inset
+
+ or 
+\begin_inset Formula $Q=-1,S_{Z}=-1$
+\end_inset
+
+, for 
+\begin_inset Formula $c_{1\uparrow}$
+\end_inset
+
+ and 
+\begin_inset Formula $c_{1\uparrow}^{\dagger}$
+\end_inset
+
+ respectly, can survive for the bracket, we only need to focus on their
+ subspace 
+\begin_inset Formula $r$
+\end_inset
+
+.
+ Noted that the subscript diag means the 
+\begin_inset Formula $|Q,S_{Z},r>_{diag}$
+\end_inset
+
+ is the eigenvector for the energy 
+\begin_inset Formula $E_{Q,S_{Z},r}$
+\end_inset
+
+.
+ Here we focus on the 
+\begin_inset Formula $\,_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag}$
+\end_inset
+
+ term, the other term can be calculated similarily.
+\end_layout
+
+\begin_layout Standard
+The 
+\begin_inset Formula $\,_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag}$
+\end_inset
+
+ is not easy to calculate, because each eigenstate 
+\begin_inset Formula $|Q,S_{Z},r>_{diag}$
+\end_inset
+
+ is the mix state of the original basis 
+\begin_inset Formula $|Q,S_{Z},r>_{old}$
+\end_inset
+
+, where 
+\begin_inset Formula $|Q,S_{Z},r>_{old}$
+\end_inset
+
+ is the primitive basis, e.g.
+ 
+\begin_inset Formula $|0,1,-1,2>$
+\end_inset
+
+ for 
+\begin_inset Formula $Q=0,S_{Z}=0$
+\end_inset
+
+.
+ However, the 
+\begin_inset Formula $\,_{old}<0,0,0|c_{1\uparrow}|1,1,r>_{old}$
+\end_inset
+
+ is easy to calculate.
+ So we can do a basis transformation:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\,_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag}=\underset{r'}{\sum}\underset{r''}{\sum}\,_{diag}<0,0,0|0,0,r'>_{old}\,_{old}<0,0,r'|c_{1\uparrow}|1,1,r''>_{old}\,_{old}<1,1,r''|1,1,r>_{diag}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The term 
+\begin_inset Formula $\,_{diag}<0,0,0|0,0,r'>_{old}$
+\end_inset
+
+ and 
+\begin_inset Formula $\,_{old}<1,1,r''|1,1,r>_{diag}$
+\end_inset
+
+ are the orthonormal transformation matrices, which is stored in the code
+ variable 
+\begin_inset Quotes eld
+\end_inset
+
+states
+\begin_inset Quotes erd
+\end_inset
+
+.
+ Thus, the braket can be easily evaluate using the simple matrix multiplication.
+ We first evaluate the matrix 
+\begin_inset Formula $\,_{old}<0,0,r'|c_{1\uparrow}|1,1,r''>_{old}$
+\end_inset
+
+ by simple index look up, then multiply it by transform matrix.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\,_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag(1\times M)}=U_{0,0(1\times L)}^{T}\cdot\,_{old}<0,0,r'|c_{1\uparrow}|1,1,r''>_{old(L\times M)}\cdot U_{1,1(M\times M)}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The dimension for 
+\begin_inset Formula $U_{0,0}^{T}$
+\end_inset
+
+ is 
+\begin_inset Formula $1\times L$
+\end_inset
+
+, where 
+\begin_inset Formula $L$
+\end_inset
+
+ is the size of subspace 
+\begin_inset Formula $Q=0,S_{Z}=0$
+\end_inset
+
+.
+ The dimension for 
+\begin_inset Formula $U_{1,1}$
+\end_inset
+
+ is 
+\begin_inset Formula $M\times M$
+\end_inset
+
+, where 
+\begin_inset Formula $M$
+\end_inset
+
+ is the size of subspace 
+\begin_inset Formula $Q=1,S_{Z}=1$
+\end_inset
+
+.
+ After obtained 
+\begin_inset Formula $\,_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag}$
+\end_inset
+
+ , the square of it is called spectral weight, which is printed out in 
+\begin_inset Quotes eld
+\end_inset
+
+spectralWeightsXXXXX.dat
+\begin_inset Quotes erd
+\end_inset
+
+.
+ Pluging in the energies 
+\begin_inset Formula $E_{1,1,r}$
+\end_inset
+
+ and the corresponding spectralweight 
+\begin_inset Formula $|_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag}|^{2}$
+\end_inset
+
+ into 
+\begin_inset Formula $A_{1\uparrow}(\omega)$
+\end_inset
+
+ we obtain the electron part of the spectral function.
+ The hole part 
+\begin_inset Formula $|_{diag}<0,0,0|c_{1\uparrow}|-1,-1,r>_{diag}|^{2}$
+\end_inset
+
+ can be calculated similarily.
+ We can check that:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $\underset{r}{\sum}(|_{diag}<0,0,0|c_{1\uparrow}|-1,-1,r>_{diag}|^{2}+|_{diag}<0,0,0|c_{1\uparrow}|1,1,r>_{diag}|^{2})=1$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+the total spectralweight is 1.
+ Finally, the spectralfunction is outputed as 
+\begin_inset Quotes eld
+\end_inset
+
+spectralFunctionXXXXX.dat
+\begin_inset Quotes erd
+\end_inset
+
+.
+ The Green's function can be evaluated by the Kramer-Kronig relation:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $G_{1\uparrow}(\omega)=\int_{-\infty}^{\infty}d\omega'\frac{A(\omega')}{\omega-\omega'}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+and the output is 
+\begin_inset Quotes eld
+\end_inset
+
+greenFunctionXXXXX.dat
+\begin_inset Quotes erd
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section
+Examples:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename hubbard.eps
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset Formula $\mu=-U/2$
+\end_inset
+
+, 
+\begin_inset Formula $t=-0.5$
+\end_inset
+
+ , and broadening is 
+\begin_inset Formula $0.2$
+\end_inset
+
+.
+ 
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename anderson.eps
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset Formula $\mu=-U/2$
+\end_inset
+
+, 
+\begin_inset Formula $t=-0.5$
+\end_inset
+
+ , and broadening is 
+\begin_inset Formula $0.2$
+\end_inset
+
+.
+ 
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document

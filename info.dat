@@ -1,0 +1,33 @@
+10-site chain
+
+Hubbard model
+
+U = 2
+eps = -1
+t = -0.5
+
+320 subspaces of size 0
+4 subspaces of size 1
+8 subspaces of size 10
+8 subspaces of size 45
+4 subspaces of size 100
+8 subspaces of size 120
+8 subspaces of size 210
+4 subspaces of size 252
+8 subspaces of size 450
+8 subspaces of size 1200
+4 subspaces of size 2025
+8 subspaces of size 2100
+4 subspaces of size 2520
+8 subspaces of size 5400
+8 subspaces of size 9450
+4 subspaces of size 11340
+4 subspaces of size 14400
+8 subspaces of size 25200
+4 subspaces of size 30240
+4 subspaces of size 44100
+4 subspaces of size 52920
+1 subspaces of size 63504
+
+Largest subspace = 63504
+
