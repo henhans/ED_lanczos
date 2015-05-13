@@ -12,6 +12,7 @@
 #include "myutil.h"
 #include "random.h"
 #include "diag.h"
+#include <omp.h>
 #include <cstdlib>
 #include <cassert>
 
@@ -349,10 +350,11 @@ double u_dot_up( Parameters parameters, Basis &basis, QSzCount &qszcount, States
 States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u )
 {
     clog<<"enter H_dot_u"<<endl;
-    Matrix hamiltonian;//storing temporary partial hamiltonian for q and sz
+    //Matrix hamiltonian;//storing temporary partial hamiltonian for q and sz
     Matrix Hu_q_sz;
     States Hu;// storing H_dot_u
 
+    //#pragma omp parallel for
     for (int q = -parameters.N; q <= parameters.N; q++)
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
@@ -362,12 +364,13 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
 
             cout << "calculating H|u> : Q = " << q << ", Sz = " << sz << ", subspace size: " << qszcount[q][sz] << endl;
             // set up Hamiltonian in this subspace:
-            hamiltonian.resize(qszcount[q][sz], qszcount[q][sz]);
-            hamiltonian.zero();
+            //hamiltonian.resize(qszcount[q][sz], qszcount[q][sz]);
+            //hamiltonian.zero();
             Hu_q_sz.resize(qszcount[q][sz],1);
             Hu[q][sz].resize(qszcount[q][sz],1);
             //set up u_q_sz
      
+            #pragma omp parallel for
             for (int r = 0; r < qszcount[q][sz]; r++) // ket state
             {
                 double sum=0;
@@ -388,7 +391,8 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
                     if ((basis[q][sz][r][0] == 2) )
                           temp += 2*parameters.eps+parameters.u;
 
-                    hamiltonian.set(r,r, temp);
+                    //hamiltonian.set(r,r, temp);
+                    sum+=temp*u[q][sz].get(r,0);
                 }
                 else
                 {
@@ -409,13 +413,15 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
                       if ((basis[q][sz][r][m] == 2) )
                             temp += 2*parameters.eps+parameters.u;
 
-                      hamiltonian.set(r,r, temp);
                     }
+                    //hamiltonian.set(r,r, temp);
+                    sum+=temp*u[q][sz].get(r,0);
                     //cout << "diag element=" << hamiltonian.get(r,r) <<endl;
                                         
                 }
                 
                 // hopping between sites:
+                //#pragma omp parallel for shared(sum, hamiltonian,u)
                 for (int rp = 0; rp < qszcount[q][sz]; rp++) // bra state
                 {
                     for (int m = 0; m < parameters.N-1; m++)// searching hoping term from the basis
@@ -439,39 +445,55 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
                         // In the following, fill in all the missing matrix elements
                         
                         if ((basis[q][sz][r][m] == 0) && (basis[q][sz][r][m+1] == 1) && (basis[q][sz][rp][m] == 1) && (basis[q][sz][rp][m+1] == 0))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == -1) && (basis[q][sz][r][m+1] == 1) && (basis[q][sz][rp][m] == 2) && (basis[q][sz][rp][m+1] == 0))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 0) && (basis[q][sz][r][m+1] == -1) && (basis[q][sz][rp][m] == -1) && (basis[q][sz][rp][m+1] == 0))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 1) && (basis[q][sz][r][m+1] == -1) && (basis[q][sz][rp][m] == 2) && (basis[q][sz][rp][m+1] == 0))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 0) && (basis[q][sz][r][m+1] == 2) && (basis[q][sz][rp][m] == 1) && (basis[q][sz][rp][m+1] == -1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == -1) && (basis[q][sz][r][m+1] == 2) && (basis[q][sz][rp][m] == 2) && (basis[q][sz][rp][m+1] == -1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 0) && (basis[q][sz][r][m+1] == 2) &&(basis[q][sz][rp][m] == -1) && (basis[q][sz][rp][m+1] == 1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 1) && (basis[q][sz][r][m+1] == 2) && (basis[q][sz][rp][m] == 2) && (basis[q][sz][rp][m+1] == 1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 1) && (basis[q][sz][r][m+1] == 0) &&(basis[q][sz][rp][m] == 0) && (basis[q][sz][rp][m+1] == 1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 1) && (basis[q][sz][r][m+1] == -1) &&(basis[q][sz][rp][m] == 0) && (basis[q][sz][rp][m+1] == 2))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == -1) && (basis[q][sz][r][m+1] == 0) &&(basis[q][sz][rp][m] == 0) && (basis[q][sz][rp][m+1] == -1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == -1) && (basis[q][sz][r][m+1] == 1) &&(basis[q][sz][rp][m] == 0) && (basis[q][sz][rp][m+1] == 2))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 2) && (basis[q][sz][r][m+1] == 0) &&(basis[q][sz][rp][m] == -1) && (basis[q][sz][rp][m+1] == 1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 2) && (basis[q][sz][r][m+1] == -1) && (basis[q][sz][rp][m] == -1) && (basis[q][sz][rp][m+1] == 2))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 2) && (basis[q][sz][r][m+1] == 0) && (basis[q][sz][rp][m] == 1) && (basis[q][sz][rp][m+1] == -1))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                         if ((basis[q][sz][r][m] == 2) && (basis[q][sz][r][m+1] == 1) && (basis[q][sz][rp][m] == 1) && (basis[q][sz][rp][m+1] == 2))
-                            hamiltonian.set(r, rp, parameters.t);
+                            //hamiltonian.set(r, rp, parameters.t);
+                            sum+=parameters.t*u[q][sz].get(rp,0);
                     }//m
-                    sum+=hamiltonian.get(r,rp)*u[q][sz].get(rp,0);
+                    //sum+=hamiltonian.get(r,rp)*u[q][sz].get(rp,0);
                 }//rp
                 Hu[q][sz].set(r,0,sum);
             }//r
@@ -498,7 +520,7 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
             // deallocate matrixes
             //u_q_sz.erase();
             Hu_q_sz.erase();
-            hamiltonian.erase();
+            //hamiltonian.erase();
 
         }//sz
     }//q
