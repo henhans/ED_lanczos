@@ -33,6 +33,7 @@ typedef struct Parameters
     double broadening;// broadening parameter for the delta-peaks
     double bandWidth;// range for the frequency
     Model model;// defines the model (either U_i = U*delta_{i,1} or U_i = U)
+    int itmax;// maximum lanczos iterations
 } Parameters;
 
 typedef map<int, map<int, int> > QSzCount;// total number, Sz, number of state
@@ -41,30 +42,34 @@ typedef map<int, map<int, Matrix> > States;// total number, Sz, eigenstates
 //typedef map<int, map<int, vector<double> > > States; // storing the states 
 typedef map<int, map<int, vector<vector<int> > > > Basis;
 // total number, Sz, basis |-1,0,2,1,1.....> as occupation -1 spin dn,1 spin up, 0 empty, 2 double occupied
+//typedef vector<map<int, map<int, Matrix> > > Lanczos_States;// storing all the lanczos states
 
 void buildbasis(const int N, vector<int> &s, Basis &basis, QSzCount &qszcount, map<int, int> &countSubspaces, ofstream &info );
 bool newConfiguration(vector<int> &s, int lower, int upper);// generate new configuration from lower(-1) spin dn to upper(2) double occupied
+void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &energies, vector<double> &gs_lanczos_coeff ,ofstream &info );
 States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u );// H|u>
 double u_dot_up( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u, States &up );// <u|up> u dot uprime
-vector<double> diagonalize_tri(vector<double> diag , vector<double> offdiag );// diagonalize tridigonal matrix
+vector<double> diagonalize_tri(vector<double> diag , vector<double> offdiag , vector<double> &gs_lanczos_coeff );// diagonalize tridigonal matrix
 void broadeningPoles(const vector<double> &poles, const vector<double> &weights, vector<double> &newGrid, vector<double> &smoothFunction, Parameters &p);
 void kramersKronig(const vector<double> &x, const vector<double> &fin, vector<double> &fout, Parameters &p);
 double gaussian(double omega, double b);
 
 int main(int argc, const char* argv[])
 {
-    int N=6, itmax=100 , charge , spin;
+    int N=6, itmax=200 , charge , spin;
     RanGSL rand(1234);//initial random number generator with seed
-    Parameters parameters = {N, 5000, 2., -1., -0.5, 0.1, 10, hubbard/*anderson*/};
+    Parameters parameters = {N, 5000, 2., -1., -0.5, 0.1, 10, hubbard/*anderson*/, itmax};
 
     if (argc==1) {
-       cout << "commandline argument: N, U, mu, t, broaden, model(0 for anderson or 1 for hubbard )" <<endl;
+       cout << "commandline argument: N, U, mu, t, broaden, model(0 for anderson or 1 for hubbard, itmax )" <<endl;
        return 1;
     }
 
     // reads in command line arguments, it is not essential
     switch (argc)
     {
+        case 8:
+            parameters.itmax =atoi(argv[7]);
         case 7:
             //parameters.model = (Model) atoi(argv[6]);
             parameters.model = static_cast<Model> (atoi( argv[6]) );
@@ -89,7 +94,7 @@ int main(int argc, const char* argv[])
     time(&start);
     ofstream info("info.dat");// print out the runtime information
     vector<double> energies;// storing energies
-    States u_n, u_n_p1, u_n_m1;//storing temporary lanczos basis
+    //States u_n, u_n_p1, u_n_m1, gs_wavefn;//storing temporary lanczos basis
     //States states;// storing eigevstates, as a orthonormal matrix
     // s[i] labels a state at site i: s[i] = 0 means empty state,
     // -1 means spin down state, 1 means spin up state and 2 means doubly occupied state
@@ -98,8 +103,10 @@ int main(int argc, const char* argv[])
     // qszcount counts the number of subspaces in quantum numbers Q, Sz
     QSzCount qszcount;//count the size of subspace for each block
     Basis basis;// storing the basis for eahc block
+    //Lanczos_States lanczos_states; // storing lanczos basis for constructing ground state wavefunction
     map<int, int> countSubspaces;// storing the number of subspace which has the same size. (first integer size, second interger occur times)
-    vector<double> a, b;
+    //vector<double> a, b; // storing the diagonal elements a and off diagonal elements b for tridiagonal matrix
+    vector<double> gs_lanczos_coeff; // storing ground state lanczos coefficients
 
     info << parameters.N << "-site chain\n" << endl;
     if (parameters.model == anderson)
@@ -117,147 +124,19 @@ int main(int argc, const char* argv[])
     // Set up the basis
     //  setupBasis(parameters.N, parameters.N, basis, s, qszcount);
     buildbasis(parameters.N, s, basis, qszcount, countSubspaces, info );
+    // first lanczos to get ground state lanczos coefficient
+    lanczos( parameters, basis, qszcount, energies, gs_lanczos_coeff, info );
 
-    // Set up the initial random Lanczos state u0    
-    int hil_count = 0;
-    for (int q = -parameters.N; q <= parameters.N; q++)
-    {
-        for (int sz = -parameters.N; sz <= parameters.N; sz++)
-        {
-            if ( qszcount[q][sz]==0 ) continue;
-            u_n[q][sz].resize(qszcount[q][sz],1);
-            for (int r=0; r< qszcount[q][sz]; r++) {
-                u_n[q][sz].set(r,0,rand());
-                //cout << u_n[q][sz][r] << endl;
-                hil_count+=1;
-            }
-        }
+/*    double sum =0;
+    for (int i=0; i<gs_lanczos_coeff.size(); i++) {
+        sum += pow(gs_lanczos_coeff[i],2);
+        clog << gs_lanczos_coeff[i] << endl;
     }
-    assert (pow(4,parameters.N)==hil_count);
-    clog << "total size of hilbert space:" << hil_count << endl;
+    clog << "sum of square of lanczos coefficeint:" << sum << endl;
+*/
 
-    char str[40];
-    if(parameters.model==anderson)
-      sprintf(str,"energies_anderson_N%dU%3.2f.dat",parameters.N,parameters.u);
-    else
-      sprintf(str,"energies_hubbard_N%dU%3.2f.dat",parameters.N,parameters.u);
-    ofstream energiesOfStream(str);
-
-    clog << "iteration=0:" << endl;
-    States Hu_n=H_dot_u( parameters, basis, qszcount, u_n ); 
-    //calculate a_n=<u_n|H|u_n>/<u_n|u_n>
-    a.push_back( u_dot_up( parameters, basis, qszcount, u_n, Hu_n) / u_dot_up( parameters, basis, qszcount, u_n, u_n) );
-    for (int q = -parameters.N; q <= parameters.N; q++)
-    {
-        for (int sz = -parameters.N; sz <= parameters.N; sz++)
-        { 
-            if (qszcount[q][sz]==0) continue; 
-            Matrix a_u_n_q_sz = u_n[q][sz];
-            a_u_n_q_sz.multiply( a[0] );
-            u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz  ;
-        }
-    }
-
-    clog << "iteration=1:" << endl;
-    for (int q = -parameters.N; q <= parameters.N; q++)
-    {
-        for (int sz = -parameters.N; sz <= parameters.N; sz++)
-        {
-            if (qszcount[q][sz]==0) continue;
-            u_n_m1[q][sz] = u_n[q][sz];
-            u_n[q][sz] = u_n_p1[q][sz];
-        }
-    }
-    Hu_n=H_dot_u( parameters, basis, qszcount, u_n );
-    //calculate a_n=<u_n|H|u_n>/<u_n|u_n>
-    a.push_back( u_dot_up( parameters, basis, qszcount, u_n, Hu_n) / u_dot_up( parameters, basis, qszcount, u_n, u_n) );
-    b.push_back( sqrt( u_dot_up( parameters, basis, qszcount, u_n, u_n) / u_dot_up( parameters, basis, qszcount, u_n_m1, u_n_m1) ) );
-    for (int q = -parameters.N; q <= parameters.N; q++)
-    {
-        for (int sz = -parameters.N; sz <= parameters.N; sz++)
-        {
-            if (qszcount[q][sz]==0) continue;
-            Matrix a_u_n_q_sz = u_n[q][sz];
-            Matrix b_u_nm1_q_sz = u_n_m1[q][sz];
-            a_u_n_q_sz.multiply( a[1] );
-            b_u_nm1_q_sz.multiply( pow(b[0], 2) );
-            
-            u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz - b_u_nm1_q_sz ;
-        }
-    }
-
-    clog << "g.s. energy:" << diagonalize_tri(a,b)[0] << endl;
-    
-    for (int it=2; it<itmax; it++)
-    {
-        clog << "iteration=" << it << ":" <<endl;
-        for (int q = -parameters.N; q <= parameters.N; q++)
-        {
-            for (int sz = -parameters.N; sz <= parameters.N; sz++)
-            {
-                if (qszcount[q][sz]==0) continue;
-                u_n_m1[q][sz] = u_n[q][sz];
-                u_n[q][sz] = u_n_p1[q][sz];
-            }
-        }
-        Hu_n=H_dot_u( parameters, basis, qszcount, u_n );
-        //calculate a_n=<u_n|H|u_n>/<u_n|u_n>
-        a.push_back( u_dot_up( parameters, basis, qszcount, u_n, Hu_n) / u_dot_up( parameters, basis, qszcount, u_n, u_n) );
-        b.push_back( sqrt( u_dot_up( parameters, basis, qszcount, u_n, u_n) / u_dot_up( parameters, basis, qszcount, u_n_m1, u_n_m1) ) );
-        for (int q = -parameters.N; q <= parameters.N; q++)
-        {
-            for (int sz = -parameters.N; sz <= parameters.N; sz++)
-            {
-                if (qszcount[q][sz]==0) continue;
-                Matrix a_u_n_q_sz = u_n[q][sz];
-                Matrix b_u_nm1_q_sz = u_n_m1[q][sz];
-                a_u_n_q_sz.multiply( a[it] );
-                b_u_nm1_q_sz.multiply( pow(b[it-1], 2) );
-                u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz - b_u_nm1_q_sz ;
-            }
-        }
-        energies = diagonalize_tri(a,b);
-        clog << "g.s. energy:" << energies[0] << endl;
-
-        if ( it > 3 )  energiesOfStream << it << "\t" << energies[0]<< "\t" << energies[1]<< "\t" << energies[2] << "\t" << energies[3] << endl;
-    }
-
-    energiesOfStream.close();
     
     
-    // Problem 3:
-    // ==========
-    // Determine the ground state
-/*    bool flag = true;
-    charge = 0, spin = 0;
-    int rr = 0;
-    double lowestEnergy = 0;
-
-    // loop through subspaces:
-    for (int q = -parameters.N; q <= parameters.N; q++)
-    {
-        for (int sz = -parameters.N; sz <= parameters.N; sz++)
-        {
-            for ( int r=0; r<energies[q][sz].size(); r++)
-            {
-                if(energies[q][sz][r] < lowestEnergy)
-                {
-                   lowestEnergy=energies[q][sz][r];
-                   charge=q;
-                   spin=sz;
-                   rr=r;
-                }
-            }
-        }
-    }
-    
-    info << "Ground state quantum numbers and energy:" << endl;
-    info << "Q = " << charge+N << ", Sz = " << spin/2.0  << ", r = " << rr << ", energy = " << lowestEnergy << endl << endl;
-    info << "basis config= (" << "\t";
-    for(int i=0; i<basis[charge][spin][rr].size(); i++)
-        info << basis[charge][spin][rr][i] << "\t";
-    info << ")" << endl; 
-*/   
     return 0;
 }
 
@@ -331,15 +210,6 @@ double u_dot_up( Parameters parameters, Basis &basis, QSzCount &qszcount, States
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
         {
             if (qszcount[q][sz] == 0) continue;
-            //cout << "un_T" << endl;
-            //u_n[q][sz].returnTransposed().print();
-            //cout << "Hu_n" << endl;
-            //Hu_n[q][sz].print();
-            //Matrix u_n_q_sz_T = u_n[q][sz].returnTransposed();
-            //Matrix abc = u_n_q_sz_T*Hu_n[q][sz];
-            //Matrix abc = u_n[q][sz].returnTransposed()*Hu_n[q][sz];
-            //cout << "abc=" <<endl;
-            //abc.print();
             sum += (u[q][sz].returnTransposed()*up[q][sz]).get(0,0);
         }
     }
@@ -498,29 +368,7 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
                 Hu[q][sz].set(r,0,sum);
             }//r
 
-            // calculating H|u> in this subspace:
-            //method 1:
-            //for (int r = 0; r < qszcount[q][sz]; r++) // ket state
-            //{  
-            //   double sum=0;
-            //   for (int rp = 0; rp < qszcount[q][sz]; rp++) // bra state
-            //   {
-            //      sum+=hamiltonian.get(r,rp)*u[q][sz].get(rp,0);
-            //   }
-            //   Hu[q][sz].set(r,0,sum);
-            //   cout << Hu[q][sz].get(r,0) << endl;
-            //}
-            //method 2:
-            //hamiltonian.print();
-            //u_q_sz.print();
-            //Hu_q_sz=hamiltonian*u[q][sz];
-            //for (int r =0; r< qszcount[q][sz]; r++) {
-            //   cout << Hu_q_sz.get(r,0) << endl;
-            //}
-            // deallocate matrixes
-            //u_q_sz.erase();
             Hu_q_sz.erase();
-            //hamiltonian.erase();
 
         }//sz
     }//q
@@ -577,7 +425,132 @@ void kramersKronig(const vector<double> &x, const vector<double> &fin, vector<do
     }
 }
 
-vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag) 
+void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<double> &energies, vector<double> &gs_lanczos_coeff , ofstream &info )
+{
+    States u_n, u_n_p1, u_n_m1;//storing temporary lanczos basis
+    vector<double> a, b; // storing the diagonal elements a and off diagonal elements b for tridiagonal matrix
+
+    char str[40];
+    if(parameters.model==anderson)
+      sprintf(str,"energies_anderson_N%dU%3.2f.dat",parameters.N,parameters.u);
+    else
+      sprintf(str,"energies_hubbard_N%dU%3.2f.dat",parameters.N,parameters.u);
+    ofstream energiesOfStream(str);
+
+    clog << "iteration=0:" << endl;
+    // Set up the initial random Lanczos state u0    
+    int hil_count = 0;
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if ( qszcount[q][sz]==0 ) continue;
+            u_n[q][sz].resize(qszcount[q][sz],1);
+            for (int r=0; r< qszcount[q][sz]; r++) {
+                u_n[q][sz].set(r,0,rand());
+                //cout << u_n[q][sz][r] << endl;
+                hil_count+=1;
+            }
+        }
+    }
+    assert (pow(4,parameters.N)==hil_count);
+    clog << "total size of hilbert space:" << hil_count << endl;
+
+    States Hu_n=H_dot_u( parameters, basis, qszcount, u_n ); 
+    //calculate a_n=<u_n|H|u_n>/<u_n|u_n>
+    a.push_back( u_dot_up( parameters, basis, qszcount, u_n, Hu_n) / u_dot_up( parameters, basis, qszcount, u_n, u_n) );
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        { 
+            if (qszcount[q][sz]==0) continue; 
+            Matrix a_u_n_q_sz = u_n[q][sz];
+            a_u_n_q_sz.multiply( a[0] );
+            u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz  ;
+        }
+    }
+
+    clog << "iteration=1:" << endl;
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if (qszcount[q][sz]==0) continue;
+            u_n_m1[q][sz] = u_n[q][sz];
+            u_n[q][sz] = u_n_p1[q][sz];
+        }
+    }
+    Hu_n=H_dot_u( parameters, basis, qszcount, u_n );
+    //calculate a_n=<u_n|H|u_n>/<u_n|u_n>
+    a.push_back( u_dot_up( parameters, basis, qszcount, u_n, Hu_n) / u_dot_up( parameters, basis, qszcount, u_n, u_n) );
+    b.push_back( sqrt( u_dot_up( parameters, basis, qszcount, u_n, u_n) / u_dot_up( parameters, basis, qszcount, u_n_m1, u_n_m1) ) );
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if (qszcount[q][sz]==0) continue;
+            Matrix a_u_n_q_sz = u_n[q][sz];
+            Matrix b_u_nm1_q_sz = u_n_m1[q][sz];
+            a_u_n_q_sz.multiply( a[1] );
+            b_u_nm1_q_sz.multiply( pow(b[0], 2) );
+            
+            u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz - b_u_nm1_q_sz ;
+        }
+    }
+
+    energies = diagonalize_tri( a, b, gs_lanczos_coeff );
+    clog << "g.s. energy:" << energies[0] << endl;
+    
+    for (int it=2; it<parameters.itmax; it++)
+    {
+        double en, enm1=energies[0], de=pow(10,9);
+
+        gs_lanczos_coeff.clear();
+        clog << "iteration=" << it << ":" <<endl;
+        for (int q = -parameters.N; q <= parameters.N; q++)
+        {
+            for (int sz = -parameters.N; sz <= parameters.N; sz++)
+            {
+                if (qszcount[q][sz]==0) continue;
+                u_n_m1[q][sz] = u_n[q][sz];
+                u_n[q][sz] = u_n_p1[q][sz];
+            }
+        }
+        Hu_n=H_dot_u( parameters, basis, qszcount, u_n );
+        //calculate a_n=<u_n|H|u_n>/<u_n|u_n>
+        a.push_back( u_dot_up( parameters, basis, qszcount, u_n, Hu_n) / u_dot_up( parameters, basis, qszcount, u_n, u_n) );
+        b.push_back( sqrt( u_dot_up( parameters, basis, qszcount, u_n, u_n) / u_dot_up( parameters, basis, qszcount, u_n_m1, u_n_m1) ) );
+        for (int q = -parameters.N; q <= parameters.N; q++)
+        {
+            for (int sz = -parameters.N; sz <= parameters.N; sz++)
+            {
+                if (qszcount[q][sz]==0) continue;
+                Matrix a_u_n_q_sz = u_n[q][sz];
+                Matrix b_u_nm1_q_sz = u_n_m1[q][sz];
+                a_u_n_q_sz.multiply( a[it] );
+                b_u_nm1_q_sz.multiply( pow(b[it-1], 2) );
+                u_n_p1[q][sz] = Hu_n[q][sz] - a_u_n_q_sz - b_u_nm1_q_sz ;
+            }
+        }
+        energies = diagonalize_tri( a, b, gs_lanczos_coeff );
+
+        en = energies[0];
+        de = abs( en - enm1 );
+        clog << "g.s. energy:" << energies[0] << "  dE_gs= " << de << endl;
+
+        if ( it > 3 )  energiesOfStream << it << "\t" << energies[0]<< "\t" << energies[1]<< "\t" << energies[2] << "\t" << energies[3] << endl;
+
+        if(de < pow(10,-14)) break;
+        else enm1 = en;
+    }
+
+    energiesOfStream.close();
+    info << "ground state energy:" << endl;
+    info << "energy = " << energies[0] << endl;    
+
+}
+
+vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag, vector<double> &gs_lanczos_coeff ) 
 {
 
     int N = diag.size();
@@ -593,10 +566,10 @@ vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag)
     if (info != 0)
       cout << "diagonalization routine dsyev_ error: info = " << info << endl;Matrix c;
 
+    for(int i=0; i<N; i++) gs_lanczos_coeff.push_back(eigenvectors[i]);//push_back ground state lanczos coefficient
+
     delete[] work;
     return diag;//eigenvalues;
-    //for(int i=0; i<diag.size(); i++) cout << diag[i] << "\t";
-    //cout << endl;
 
     //cout << "The eigenvectors are:" << endl;
     //for(int i=0; i<N*N;i++) cout << eigenvectors[i] <<"\t";
