@@ -1,6 +1,8 @@
-/* Exact Diagonalization Lanczos version*/
-/* In this state the convention is defined as c1_u^dagger*c2_u^dagger*c3_u^dagger...c1_d^dagger*c2d^dagger...|0>*/
-/* Using this convention the hopping term is all postive for nearest neighbor*/
+/* Exact Diagonalization Lanczos version
+   In this state the convention is defined as c1_u^dagger*c2_u^dagger*c3_u^dagger...c1_d^dagger*c2d^dagger...|0>
+   Using this convention the hopping term is all postive for nearest neighbor.
+   Author: Tsung-Han Lee                      
+*/
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -15,6 +17,7 @@
 #include <omp.h>
 #include <cstdlib>
 #include <cassert>
+#include <complex>
 
 using namespace std;
 
@@ -46,10 +49,15 @@ typedef map<int, map<int, vector<vector<int> > > > Basis;
 
 void buildbasis(const int N, vector<int> &s, Basis &basis, QSzCount &qszcount, map<int, int> &countSubspaces, ofstream &info );
 bool newConfiguration(vector<int> &s, int lower, int upper);// generate new configuration from lower(-1) spin dn to upper(2) double occupied
-void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a , vector<double> &b ,vector<double> &energies, vector<double> &gs_lanczos_coeff ,ofstream &info );
+//calculating ground state energy and ground state lanczos coefficient for wavfunction calculation
+void lanczos( bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, States &init ,vector<double> &energies, vector<double> &gs_lanczos_coeff ,ofstream &info );
+//calculating ground state wavfunction
 States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &energies, vector<double> &gs_lanczos_coeff ,ofstream &info );
+//c_i^dagger|g.s.>
+States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn );
 States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u );// H|u>
 double u_dot_up( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u, States &up );// <u|up> u dot uprime
+void greenfunction( Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, double b0 );
 vector<double> diagonalize_tri(vector<double> diag , vector<double> offdiag , vector<double> &gs_lanczos_coeff );// diagonalize tridigonal matrix
 void broadeningPoles(const vector<double> &poles, const vector<double> &weights, vector<double> &newGrid, vector<double> &smoothFunction, Parameters &p);
 void kramersKronig(const vector<double> &x, const vector<double> &fin, vector<double> &fout, Parameters &p);
@@ -97,6 +105,7 @@ int main(int argc, const char* argv[])
     vector<double> energies;// storing energies
     //States u_n, u_n_p1, u_n_m1;//storing temporary lanczos basis
     States gs_wavefn;// storing ground state wave function
+    States c_0_d_gswf;// storing state c_0^dagger|g.s.>
     //States states;// storing eigevstates, as a orthonormal matrix
     // s[i] labels a state at site i: s[i] = 0 means empty state,
     // -1 means spin down state, 1 means spin up state and 2 means doubly occupied state
@@ -126,7 +135,7 @@ int main(int argc, const char* argv[])
     // Set up the basis
     buildbasis(parameters.N, s, basis, qszcount, countSubspaces, info );
     // first lanczos to get ground state lanczos coefficient
-    lanczos( parameters, basis, qszcount, a, b, energies, gs_lanczos_coeff, info );
+    lanczos(false, parameters, basis, qszcount, a, b , c_0_d_gswf , energies, gs_lanczos_coeff, info );
     // calculating ground state wave function by retracing lacnzos basis |u_n>
     gs_wavefn = lanczos_gs_wavefn(parameters, basis, qszcount, energies, gs_lanczos_coeff ,info );
 
@@ -139,7 +148,7 @@ int main(int argc, const char* argv[])
     clog << "sum of square of lanczos coefficeint:" << sum << endl;
 */
     //check g.s. wavefunction in original basis
-    double sum =0;
+/*    double sum =0;
     for (int q = -parameters.N; q <= parameters.N; q++)
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
@@ -152,6 +161,26 @@ int main(int argc, const char* argv[])
         }
     }
     clog << "sum of square of ground state coefficeint:" << sum << endl;
+*/
+    // Apply c_i^dagger|g.s.>
+    c_0_d_gswf = c_i_d_u( parameters, basis, qszcount, 0 , gs_wavefn );
+/*    //check excited wavefunction
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if ( qszcount[q][sz]==0 ) continue;
+            for (int r=0; r< qszcount[q][sz]; r++) {
+                cout << c_0_d_gswf[q][sz].get(r,0) << endl;
+            }
+        }
+    }
+*/
+    //calculate greens function coefficient
+    lanczos(true, parameters, basis, qszcount, a, b, c_0_d_gswf , energies, gs_lanczos_coeff, info );
+
+    double b0= sqrt(u_dot_up( parameters, basis, qszcount, c_0_d_gswf, c_0_d_gswf));
+    greenfunction( parameters, basis, qszcount, a, b, b0 );
 
     return 0;
 }
@@ -235,12 +264,11 @@ double u_dot_up( Parameters parameters, Basis &basis, QSzCount &qszcount, States
 
 States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u )
 {
-    clog<<"enter H_dot_u"<<endl;
+//    clog<<"enter H_dot_u"<<endl;
     //Matrix hamiltonian;//storing temporary partial hamiltonian for q and sz
     Matrix Hu_q_sz;
     States Hu;// storing H_dot_u
 
-    //#pragma omp parallel for
     for (int q = -parameters.N; q <= parameters.N; q++)
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
@@ -248,7 +276,7 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
             if (qszcount[q][sz] == 0)
                 continue;
 
-            cout << "calculating H|u> : Q = " << q << ", Sz = " << sz << ", subspace size: " << qszcount[q][sz] << endl;
+//            clog << "calculating H|u> : Q = " << q << ", Sz = " << sz << ", subspace size: " << qszcount[q][sz] << endl;
             // set up Hamiltonian in this subspace:
             //hamiltonian.resize(qszcount[q][sz], qszcount[q][sz]);
             //hamiltonian.zero();
@@ -441,10 +469,13 @@ void kramersKronig(const vector<double> &x, const vector<double> &fin, vector<do
     }
 }
 
-void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<double> &a, vector<double> &b, vector<double> &energies, vector<double> &gs_lanczos_coeff , ofstream &info )
+void lanczos(bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount , vector<double> &a, vector<double> &b, States &init ,vector<double> &energies, vector<double> &gs_lanczos_coeff , ofstream &info )
 {
     RanGSL rand(1234);//initial random number generator with seed
     States u_n, u_n_p1, u_n_m1;//storing temporary lanczos basis
+    a.clear();//clear diagonal element
+    b.clear();//clear diagonal element
+    energies.clear();//clear eigenenergies
 
     char str[40];
     if(parameters.model==anderson)
@@ -453,6 +484,7 @@ void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<d
       sprintf(str,"energies_hubbard_N%dU%3.2f.dat",parameters.N,parameters.u);
     ofstream energiesOfStream(str);
 
+    if(gf) clog <<"GF ";
     clog << "iteration=0:" << endl;
     // Set up the initial random Lanczos state u0    
     int hil_count = 0;
@@ -461,11 +493,21 @@ void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<d
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
         {
             if ( qszcount[q][sz]==0 ) continue;
-            u_n[q][sz].resize(qszcount[q][sz],1);
-            for (int r=0; r< qszcount[q][sz]; r++) {
-                u_n[q][sz].set(r,0,rand());
-                //cout << u_n[q][sz].get(r,0) << endl;
-                hil_count+=1;
+            if(gf) {
+               u_n[q][sz].resize(qszcount[q][sz],1);
+               for ( int r=0; r<qszcount[q][sz]; r++){
+                   u_n[q][sz].set(r,0,init[q][sz].get(r,0));
+                   //cout << u_n[q][sz].get(r,0) << endl;
+                   hil_count+=1;
+               }
+            }
+            else {
+               u_n[q][sz].resize(qszcount[q][sz],1);
+               for (int r=0; r< qszcount[q][sz]; r++) {
+                   u_n[q][sz].set(r,0,rand());
+                   //cout << u_n[q][sz].get(r,0) << endl;
+                   hil_count+=1;
+               }
             }
         }
     }
@@ -486,6 +528,7 @@ void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<d
         }
     }
 
+    if(gf) clog <<"GF ";
     clog << "iteration=1:" << endl;
     for (int q = -parameters.N; q <= parameters.N; q++)
     {
@@ -522,6 +565,8 @@ void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<d
         double en, enm1=energies[0], de=pow(10,9);
 
         gs_lanczos_coeff.clear();
+
+        if(gf) clog <<"GF ";
         clog << "iteration=" << it << ":" <<endl;
         for (int q = -parameters.N; q <= parameters.N; q++)
         {
@@ -563,7 +608,10 @@ void lanczos( Parameters parameters, Basis &basis, QSzCount &qszcount , vector<d
     }
 
     energiesOfStream.close();
-    info << "ground state energy:" << endl;
+    if(gf)
+       info << "ground state energy:" << endl;
+    else
+       info << "Green's function ground state energy:" << endl;
     info << "energy = " << energies[0] << endl;    
 
 }
@@ -710,6 +758,74 @@ States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount
     return gs_wavefn;
 }
 
+States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn )
+{
+    double small = 0.0000001, charge, spin;
+    States c_i_d_u;
+    bool found=false;
+    //find the sector where the ground state locate
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if (qszcount[q][sz] == 0)
+                continue;
+            c_i_d_u[q][sz].resize(qszcount[q][sz],1);
+            //c_i_d_u[q][sz].zero();
+            for (int r=0; r < qszcount[q][sz]; r++) 
+            {
+                if ( gs_wavefn[q][sz].get(r,0) > small ) 
+                {
+                   charge = q;
+                   spin = sz;
+                   found = true;
+                   break;
+                }
+            }
+            if(found) break;
+        }
+        if(found) break;
+    }
+    clog << "g.s. wavefunction is in sector q=" << charge << " sz=" << spin << endl;
+    //cout << "c_i_d_u site "<< site << " " << gs_wavefn[0][0].get(0,0) << endl;
+    for (int q = -parameters.N; q <= parameters.N; q++) {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++) {
+            for (int r=0; r<qszcount[q][sz]; r++)
+                c_i_d_u[q][sz].set(r,0,0.0000000001);
+        }
+    }
+
+    for (int r=0; r < qszcount[charge+1][spin+1]; r++) 
+    {        
+        for (int rp=0; rp<qszcount[charge][spin]; rp++)
+        {
+            //clog << "r=" <<r <<" rp=" <<rp<<endl;
+            //clog << basis[charge+1][spin+1][r][site] <<"  " <<basis[charge][spin][r][site]<<endl;
+            bool same = true;// check if the other site are the same
+            for (int m=0; m<parameters.N; m++)
+            {
+                if (m==site) continue;
+                if ( basis[charge+1][spin+1][r][m] != basis[charge][spin][rp][m] )
+                {
+                    same = false;
+                    break;
+                }
+                
+            }
+            if ( (same) && (basis[charge+1][spin+1][r][site] == 1) && (basis[charge][spin][rp][site] == 0) )
+            {
+                c_i_d_u[charge+1][spin+1].set( r,0,gs_wavefn[charge][spin].get(rp,0) );
+            }
+            if ( (same) && (basis[charge+1][spin+1][r][site] == 2) && (basis[charge][spin][rp][site] == -1) )
+            {
+                c_i_d_u[charge+1][spin+1].set( r,0,gs_wavefn[charge][spin].get(rp,0) );
+            }
+        }
+    }
+
+    return c_i_d_u;
+}
+
 vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag, vector<double> &gs_lanczos_coeff ) 
 {
 
@@ -734,4 +850,17 @@ vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag, vect
     //cout << "The eigenvectors are:" << endl;
     //for(int i=0; i<N*N;i++) cout << eigenvectors[i] <<"\t";
     //cout<< endl;
+}
+
+void greenfunction( Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, double b0 )
+{
+    vector<double> omega(parameters.omegaPoints);// frequency grid
+    vector<double> gf(parameters.omegaPoints);//green's function
+    double stepWidth = 2*parameters.bandWidth*parameters.t/parameters.omegaPoints;
+    // set up the grid for the frequency values
+    for (int i = 0; i < parameters.omegaPoints; i++) {
+        omega[i] = -parameters.bandWidth*parameters.t + i*stepWidth;
+        //cout << omega[i] << endl;
+        
+    }
 }
