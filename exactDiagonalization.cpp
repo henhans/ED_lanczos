@@ -55,19 +55,19 @@ void lanczos( bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount, 
 States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &energies, vector<double> &gs_lanczos_coeff ,ofstream &info );
 //c_i^dagger|g.s.>
 States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn );
+//c_i|g.s.>
+States c_i_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn );
 States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u );// H|u>
 double u_dot_up( Parameters parameters, Basis &basis, QSzCount &qszcount, States &u, States &up );// <u|up> u dot uprime
-void greenfunction( Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, double b0 );
+vector<complex<double> > greenfunction(int e_or_h, Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, double b0 , double e0, vector<double> &omega);
+complex<double> continuefraction(int e_or_h, complex<double> &z, vector<double> &a, vector<double> &b);
 vector<double> diagonalize_tri(vector<double> diag , vector<double> offdiag , vector<double> &gs_lanczos_coeff );// diagonalize tridigonal matrix
-void broadeningPoles(const vector<double> &poles, const vector<double> &weights, vector<double> &newGrid, vector<double> &smoothFunction, Parameters &p);
-void kramersKronig(const vector<double> &x, const vector<double> &fin, vector<double> &fout, Parameters &p);
-double gaussian(double omega, double b);
 
 int main(int argc, const char* argv[])
 {
-    int N=6, itmax=200 , charge , spin;
+    int N=6, itmax=100 , charge , spin;
     //RanGSL rand(1234);//initial random number generator with seed
-    Parameters parameters = {N, 5000, 2., -1., -0.5, 0.1, 10, hubbard/*anderson*/, itmax};
+    Parameters parameters = {N, 5000, 2., -1., -0.5, 0.2, 20, hubbard/*anderson*/, itmax};
 
     if (argc==1) {
        cout << "commandline argument: N, U, mu, t, broaden, model(0 for anderson or 1 for hubbard), itmax " <<endl;
@@ -105,7 +105,7 @@ int main(int argc, const char* argv[])
     vector<double> energies;// storing energies
     //States u_n, u_n_p1, u_n_m1;//storing temporary lanczos basis
     States gs_wavefn;// storing ground state wave function
-    States c_0_d_gswf;// storing state c_0^dagger|g.s.>
+    States c_0_d_gswf, c_0_gswf;// storing state c_0^dagger|g.s.>
     //States states;// storing eigevstates, as a orthonormal matrix
     // s[i] labels a state at site i: s[i] = 0 means empty state,
     // -1 means spin down state, 1 means spin up state and 2 means doubly occupied state
@@ -118,6 +118,9 @@ int main(int argc, const char* argv[])
     map<int, int> countSubspaces;// storing the number of subspace which has the same size. (first integer size, second interger occur times)
     vector<double> a, b; // storing the diagonal elements a and off diagonal elements b for tridiagonal matrix
     vector<double> gs_lanczos_coeff; // storing ground state lanczos coefficients
+    vector<double> omega(parameters.omegaPoints);// frequency grid
+    double gs_energy;//ground state energy
+    char str[100];
 
     info << parameters.N << "-site chain\n" << endl;
     if (parameters.model == anderson)
@@ -138,7 +141,7 @@ int main(int argc, const char* argv[])
     lanczos(false, parameters, basis, qszcount, a, b , c_0_d_gswf , energies, gs_lanczos_coeff, info );
     // calculating ground state wave function by retracing lacnzos basis |u_n>
     gs_wavefn = lanczos_gs_wavefn(parameters, basis, qszcount, energies, gs_lanczos_coeff ,info );
-
+    gs_energy = energies[0];
     //check g.s. lanczos coefficient in lanczos basis
 /*    double sum =0;
     for (int i=0; i<gs_lanczos_coeff.size(); i++) {
@@ -162,25 +165,63 @@ int main(int argc, const char* argv[])
     }
     clog << "sum of square of ground state coefficeint:" << sum << endl;
 */
+
+    double stepWidth = 2*parameters.bandWidth*parameters.t/parameters.omegaPoints;
+    for (int i = 0; i < parameters.omegaPoints; i++) {
+        omega[i] = -parameters.bandWidth*parameters.t + i*stepWidth;
+    }
+
     // Apply c_i^dagger|g.s.>
     c_0_d_gswf = c_i_d_u( parameters, basis, qszcount, 0 , gs_wavefn );
-/*    //check excited wavefunction
-    for (int q = -parameters.N; q <= parameters.N; q++)
+    //check electron wavefunction
+/*    for (int q = -parameters.N; q <= parameters.N; q++)
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
         {
             if ( qszcount[q][sz]==0 ) continue;
             for (int r=0; r< qszcount[q][sz]; r++) {
-                cout << c_0_d_gswf[q][sz].get(r,0) << endl;
+                clog << c_0_d_gswf[q][sz].get(r,0) << endl;
             }
         }
     }
 */
     //calculate greens function coefficient
     lanczos(true, parameters, basis, qszcount, a, b, c_0_d_gswf , energies, gs_lanczos_coeff, info );
-
     double b0= sqrt(u_dot_up( parameters, basis, qszcount, c_0_d_gswf, c_0_d_gswf));
-    greenfunction( parameters, basis, qszcount, a, b, b0 );
+    vector<complex<double> > gf_e = greenfunction(1, parameters, basis, qszcount, a, b, b0 , gs_energy, omega);//1 for electron
+
+    // Apply c_i|g.s>
+    c_0_gswf = c_i_u( parameters, basis, qszcount, 0 , gs_wavefn ); 
+    //check hole wavefunction
+/*    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if ( qszcount[q][sz]==0 ) continue;
+            for (int r=0; r< qszcount[q][sz]; r++) {
+                clog << c_0_gswf[q][sz].get(r,0) << endl;
+            }
+        }
+    }
+*/
+    
+    lanczos(true, parameters, basis, qszcount, a, b, c_0_gswf , energies, gs_lanczos_coeff, info );
+    b0= sqrt(u_dot_up( parameters, basis, qszcount, c_0_gswf, c_0_gswf));
+    vector<complex<double> > gf_h = greenfunction(0, parameters, basis, qszcount, a, b, b0 , gs_energy, omega);//0 for hole
+
+    //for (int i=0; i< parameters.omegaPoints; i++)
+    //    cout << omega[i] << "\t"  << real(gf_e[i]) + real(gf_h[i]) << "\t" << imag(gf_e[i]) + imag(gf_h[i]) << endl;
+
+    if(parameters.model==anderson)
+      sprintf(str,"greenFunction_anderson_N%dU%3.2f.dat",parameters.N,parameters.u);
+    else
+      sprintf(str,"greenFunction_hubbard_N%dU%3.2f.dat",parameters.N,parameters.u);
+    ofstream printGF(str);
+
+    for (int i = 0; i < parameters.omegaPoints; i++)
+        printGF << omega[i] << "\t"  << real(gf_e[i]) + real(gf_h[i]) << "\t" << imag(gf_e[i]) + imag(gf_h[i]) << endl;
+    printGF.close();
+
 
     return 0;
 }
@@ -419,56 +460,6 @@ States H_dot_u( Parameters parameters, Basis &basis, QSzCount &qszcount, States 
     return Hu;
 }
 
-void broadeningPoles(const vector<double> &poles, const vector<double> &weights, vector<double> &newGrid, vector<double> &smoothFunction, Parameters &p)
-{
-    double stepWidth = 2*p.bandWidth*p.t/p.omegaPoints;
-    // set up the grid for the frequency values
-    newGrid.resize(p.omegaPoints);
-    smoothFunction.resize(p.omegaPoints);
-    for (int i = 0; i < p.omegaPoints; i++)
-        newGrid[i] = -p.bandWidth*p.t + i*stepWidth;
-    
-    // summation of contributions of all gaussians times their weight at each frequency
-    for (int i = 0; i < p.omegaPoints; i++)
-    {
-        smoothFunction[i] = 0;
-        for (unsigned int j = 0; j < poles.size(); j++)
-        {
-            smoothFunction[i] += weights[j] * gaussian(newGrid[i]-poles[j], p.broadening);
-        }
-    }
-}
-
-double gaussian(double omega, double b)
-{
-    b = 1/b;
-    return b*exp(-omega*omega*b*b)/sqrt(M_PI);
-}
-
-
-void kramersKronig(const vector<double> &x, const vector<double> &fin, vector<double> &fout, Parameters &p)
-{
-    /* This function calculates the Kramers-Kronig-Transform of the function fin
-     * using the trapezian integration method and returns the result in function
-     * fout.
-     * Kramers Kronig int_{-/infty}^/infty fin(y)/(x-y)dy
-     * In order not to divide by zero -> i != j.
-     */
-    
-    double deltax = x[1] - x[0];
-    for (int i = 0; i < p.omegaPoints; i++)
-    {
-        if (i != 0 && i != p.omegaPoints-1)
-            fout[i] = 0.5*(fin[0]/(x[0]-x[i]) + fin[p.omegaPoints-1]/(x[p.omegaPoints-1]-x[i]));
-        for (int j = 1; j < p.omegaPoints-1; j++)
-        {
-            if (i != j)
-                fout[i] += fin[j]/(x[j]-x[i]);
-        }
-        fout[i] *= -deltax/M_PI;
-    }
-}
-
 void lanczos(bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount , vector<double> &a, vector<double> &b, States &init ,vector<double> &energies, vector<double> &gs_lanczos_coeff , ofstream &info )
 {
     RanGSL rand(1234);//initial random number generator with seed
@@ -511,7 +502,7 @@ void lanczos(bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount , 
             }
         }
     }
-    assert (pow(4,parameters.N)==hil_count);
+    assert (pow(4.,parameters.N)==hil_count);
     clog << "total size of hilbert space:" << hil_count << endl;
 
     States Hu_n=H_dot_u( parameters, basis, qszcount, u_n ); 
@@ -562,7 +553,7 @@ void lanczos(bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount , 
     
     for (int it=2; it<parameters.itmax; it++)
     {
-        double en, enm1=energies[0], de=pow(10,9);
+        double en, enm1=energies[0], de=pow(10.,9);
 
         gs_lanczos_coeff.clear();
 
@@ -600,10 +591,10 @@ void lanczos(bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount , 
         clog << "g.s. energy:" << energies[0] << "  dE_gs= " << de << endl;
 
         // output energy
-        if ( it > 3 )  energiesOfStream << it << "\t" << energies[0]<< "\t" << energies[1]<< "\t" << energies[2] << "\t" << energies[3] << endl;
+        if (!gf && it > 3 )  energiesOfStream << it << "\t" << energies[0]<< "\t" << energies[1]<< "\t" << energies[2] << "\t" << energies[3] << endl;
 
         // check convergence
-        if(de < pow(10,-14)) break;
+        if(de < pow(10.,-14) /*&& !gf*/) break;
         else enm1 = en;
     }
 
@@ -642,7 +633,7 @@ States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount
             }
         }
     }
-    assert (pow(4,parameters.N)==hil_count);
+    assert (pow(4.,parameters.N)==hil_count);
     clog << "total size of hilbert space:" << hil_count << endl;
 
     norm=sqrt( u_dot_up( parameters, basis, qszcount, u_n, u_n ));
@@ -705,7 +696,7 @@ States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount
     
     for (int it=2; it<parameters.itmax; it++)
     {
-        double en, enm1=energies[0], de=pow(10,9);
+        double en, enm1=energies[0], de=pow(10.,9);
 
         gs_lanczos_coeff.clear();
         clog << "iteration=" << it << ":" <<endl;
@@ -749,7 +740,7 @@ States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount
         clog << "g.s. wave function calculation. g.s. energy:" << energies[0] << "  dE_gs= " << de << endl;
 
         //check convergence
-        if(de < pow(10,-14)) break;
+        if(de < pow(10.,-14)) break;
         else enm1 = en;
     }
 
@@ -791,7 +782,7 @@ States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int sit
     for (int q = -parameters.N; q <= parameters.N; q++) {
         for (int sz = -parameters.N; sz <= parameters.N; sz++) {
             for (int r=0; r<qszcount[q][sz]; r++)
-                c_i_d_u[q][sz].set(r,0,0.0000000001);
+                c_i_d_u[q][sz].set(r,0,0.000000000);
         }
     }
 
@@ -826,6 +817,73 @@ States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int sit
     return c_i_d_u;
 }
 
+States c_i_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn )
+{
+    double small = 0.0000001, charge, spin;
+    States c_i_u;
+    bool found=false;
+    //find the sector where the ground state locate
+    for (int q = -parameters.N; q <= parameters.N; q++)
+    {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++)
+        {
+            if (qszcount[q][sz] == 0)
+                continue;
+            c_i_u[q][sz].resize(qszcount[q][sz],1);
+            //c_i_u[q][sz].zero();
+            for (int r=0; r < qszcount[q][sz]; r++) 
+            {
+                if ( gs_wavefn[q][sz].get(r,0) > small ) 
+                {
+                   charge = q;
+                   spin = sz;
+                   found = true;
+                   break;
+                }
+            }
+            if(found) break;
+        }
+        if(found) break;
+    }
+    clog << "g.s. wavefunction is in sector q=" << charge << " sz=" << spin << endl;
+    //cout << "c_i_u site "<< site << " " << gs_wavefn[0][0].get(0,0) << endl;
+    for (int q = -parameters.N; q <= parameters.N; q++) {
+        for (int sz = -parameters.N; sz <= parameters.N; sz++) {
+            for (int r=0; r<qszcount[q][sz]; r++)
+                c_i_u[q][sz].set(r,0,0);
+        }
+    }
+
+    for (int r=0; r < qszcount[charge-1][spin-1]; r++) 
+    {        
+        for (int rp=0; rp<qszcount[charge][spin]; rp++)
+        {
+            //clog << "r=" <<r <<" rp=" <<rp<<endl;
+            //clog << basis[charge+1][spin+1][r][site] <<"  " <<basis[charge][spin][r][site]<<endl;
+            bool same = true;// check if the other site are the same
+            for (int m=0; m<parameters.N; m++)
+            {
+                if (m==site) continue;
+                if ( basis[charge-1][spin-1][r][m] != basis[charge][spin][rp][m] )
+                {
+                    same = false;
+                    break;
+                }
+                
+            }
+            if ( (same) && (basis[charge-1][spin-1][r][site] == 0) && (basis[charge][spin][rp][site] == 1) )
+            {
+                c_i_u[charge-1][spin-1].set( r,0,gs_wavefn[charge][spin].get(rp,0) );
+            }
+            if ( (same) && (basis[charge-1][spin-1][r][site] == -1) && (basis[charge][spin][rp][site] == 2) )
+            {
+                c_i_u[charge-1][spin-1].set( r,0,gs_wavefn[charge][spin].get(rp,0) );
+            }
+        }
+    }
+
+    return c_i_u;
+}
 vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag, vector<double> &gs_lanczos_coeff ) 
 {
 
@@ -852,15 +910,58 @@ vector<double> diagonalize_tri(vector<double> diag, vector<double> offdiag, vect
     //cout<< endl;
 }
 
-void greenfunction( Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, double b0 )
+vector<complex<double> > greenfunction(int e_or_h, Parameters parameters, Basis &basis, QSzCount &qszcount, vector<double> &a, vector<double> &b, double b0 , double e0, vector<double> &omega)
 {
-    vector<double> omega(parameters.omegaPoints);// frequency grid
-    vector<double> gf(parameters.omegaPoints);//green's function
+    vector<complex<double> > gf(parameters.omegaPoints);//green's function
     double stepWidth = 2*parameters.bandWidth*parameters.t/parameters.omegaPoints;
+
+    clog << "E0=" << e0 << endl;
+    /*vector<double> ap = a;
+    vector<double> bp;
+    bp.push_back(b0);
+    for (int i=0; i<b.size(); i++) bp.push_back(b[i]);
+    clog << "size of a=" << ap.size() << "  size of b=" << bp.size() << endl;*/
+
     // set up the grid for the frequency values
     for (int i = 0; i < parameters.omegaPoints; i++) {
-        omega[i] = -parameters.bandWidth*parameters.t + i*stepWidth;
-        //cout << omega[i] << endl;
-        
+        vector<double> ap = a;
+        vector<double> bp;
+        complex<double> z;
+        bp.push_back(b0);
+        for (int j=0; j<b.size(); j++) bp.push_back(b[j]);
+        //clog << "size of a=" << ap.size() << "  size of b=" << bp.size() << endl;
+        //cout << complex<double>( omega[i]+e0, parameters.broadening ) << endl;
+        if (e_or_h == 1)
+           z = complex<double>( omega[i]+e0, parameters.broadening ); 
+        else
+           z = complex<double>( omega[i]-e0, parameters.broadening ); 
+        gf[i] = continuefraction( e_or_h, z , ap , bp );
+        //cout << omega[i] << "\t"  << real(gf[i]) << "\t" << imag(gf[i]) << endl; 
+    }
+
+    return gf;
+}
+
+complex<double> continuefraction(int e_or_h, complex<double> &z, vector<double> &a, vector<double> &b )
+{
+    if ( a.size()==1 && b.size()==1 ) {
+       double an = a.back();
+       a.pop_back();
+       double bn = b.back();
+       b.pop_back();
+       if( e_or_h == 1 )
+         return pow( bn , 2 )/ ( z - an );
+       else
+         return pow( bn , 2 )/ ( z + an );
+    }
+    else {
+       double an = a.back();
+       a.pop_back();
+       double bn = b.back();
+       b.pop_back();
+       if( e_or_h == 1 )
+         return pow( bn , 2 )/ ( z - an - continuefraction( e_or_h , z , a, b ) );
+       else
+         return pow( bn , 2 )/ ( z + an - continuefraction( e_or_h , z , a, b ) );
     }
 }
