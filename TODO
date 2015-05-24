@@ -1,1 +1,2 @@
-The green's function calculation get the wrong results. Check it again.
+The calculation of Green's funciont at each site is done.
+Next, try implementing the momentum extention for the Green's function, for example the CPT or the simple fourier transform.
