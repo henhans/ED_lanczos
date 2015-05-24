@@ -602,7 +602,7 @@ void lanczos(bool gf, Parameters parameters, Basis &basis, QSzCount &qszcount , 
         if ( it > 4 )  energiesOfStream << it << "\t" << energies[0]<< "\t" << energies[1]<< "\t" << energies[2] << "\t" << energies[3] <<"\t"<< energies[4] << endl;
 
         // check convergence
-        if(de < pow(10.,-14) /*&& !gf*/) break;
+        if(de < pow(10.,-12) /*&& !gf*/) break;
         else enm1 = en;
     }
 
@@ -748,7 +748,7 @@ States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount
         clog << "g.s. wave function calculation. g.s. energy:" << energies[0] << "  dE_gs= " << de << endl;
 
         //check convergence
-        if(de < pow(10.,-14)) break;
+        if(de < pow(10.,-12)) break;
         else enm1 = en;
     }
 
@@ -759,11 +759,11 @@ States lanczos_gs_wavefn(Parameters parameters, Basis &basis, QSzCount &qszcount
 
 States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn )
 {
-    double small = 0.0000001, charge, spin;
+    double small = 0.0000001, charge=0, spin=0;//ground state always locates at the highest symmetry sector
     States c_i_d_u;
     bool found=false;
     //find the sector where the ground state locate
-    for (int q = -parameters.N; q <= parameters.N; q++)
+    /*for (int q = -parameters.N; q <= parameters.N; q++)
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
         {
@@ -782,7 +782,8 @@ States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int sit
             if(found) break;
         }
         if(found) break;
-    }
+    }*/
+    
     clog << "g.s. wavefunction is in sector q=" << charge << " sz=" << spin << endl;
     //cout << "c_i_d_u site "<< site << " " << gs_wavefn[0][0].get(0,0) << endl;
     for (int q = -parameters.N; q <= parameters.N; q++) {
@@ -829,11 +830,11 @@ States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int sit
 
 States c_i_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site, States &gs_wavefn )
 {
-    double small = 0.0000001, charge, spin;
+    double small = 0.0000001, charge=0, spin=0;// ground state always locates at the highest symmetry sector
     States c_i_u;
     bool found=false;
     //find the sector where the ground state locate
-    for (int q = -parameters.N; q <= parameters.N; q++)
+    /*for (int q = -parameters.N; q <= parameters.N; q++)
     {
         for (int sz = -parameters.N; sz <= parameters.N; sz++)
         {
@@ -852,7 +853,8 @@ States c_i_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site,
             if(found) break;
         }
         if(found) break;
-    }
+    }*/
+
     clog << "g.s. wavefunction is in sector q=" << charge << " sz=" << spin << endl;
     //cout << "c_i_u site "<< site << " " << gs_wavefn[0][0].get(0,0) << endl;
     for (int q = -parameters.N; q <= parameters.N; q++) {
