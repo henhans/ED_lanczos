@@ -1,3 +1,2 @@
-There's a bug occur at U=0 mu=0, fix it!
 The calculation of Green's funciont at each site is done.
 Next, try implementing the momentum extention for the Green's function, for example the CPT or the simple fourier transform.
