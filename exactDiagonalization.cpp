@@ -173,6 +173,7 @@ int main(int argc, const char* argv[])
 
     // Apply c_i^dagger|g.s.>
     c_0_d_gswf = c_i_d_u( parameters, basis, qszcount, 0 , gs_wavefn );
+    clog << "finished c_i_d_u|g.s.>"<< endl;
     //check electron wavefunction
 /*    for (int q = -parameters.N; q <= parameters.N; q++)
     {
@@ -768,8 +769,6 @@ States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int sit
         {
             if (qszcount[q][sz] == 0)
                 continue;
-            c_i_d_u[q][sz].resize(qszcount[q][sz],1);
-            //c_i_d_u[q][sz].zero();
             for (int r=0; r < qszcount[q][sz]; r++) 
             {
                 if ( gs_wavefn[q][sz].get(r,0) > small ) 
@@ -788,8 +787,12 @@ States c_i_d_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int sit
     //cout << "c_i_d_u site "<< site << " " << gs_wavefn[0][0].get(0,0) << endl;
     for (int q = -parameters.N; q <= parameters.N; q++) {
         for (int sz = -parameters.N; sz <= parameters.N; sz++) {
-            for (int r=0; r<qszcount[q][sz]; r++)
-                c_i_d_u[q][sz].set(r,0,0.00000000);
+            if (qszcount[q][sz] == 0) 
+                continue;
+            c_i_d_u[q][sz].resize(qszcount[q][sz],1);
+            for (int r=0; r<qszcount[q][sz]; r++){
+                c_i_d_u[q][sz].set(r,0,0.);
+            }
         }
     }
 
@@ -836,8 +839,6 @@ States c_i_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site,
         {
             if (qszcount[q][sz] == 0)
                 continue;
-            c_i_u[q][sz].resize(qszcount[q][sz],1);
-            //c_i_u[q][sz].zero();
             for (int r=0; r < qszcount[q][sz]; r++) 
             {
                 if ( gs_wavefn[q][sz].get(r,0) > small ) 
@@ -856,6 +857,7 @@ States c_i_u( Parameters parameters, Basis &basis, QSzCount &qszcount, int site,
     //cout << "c_i_u site "<< site << " " << gs_wavefn[0][0].get(0,0) << endl;
     for (int q = -parameters.N; q <= parameters.N; q++) {
         for (int sz = -parameters.N; sz <= parameters.N; sz++) {
+            c_i_u[q][sz].resize(qszcount[q][sz],1);
             for (int r=0; r<qszcount[q][sz]; r++)
                 c_i_u[q][sz].set(r,0,0.00000000);
         }
